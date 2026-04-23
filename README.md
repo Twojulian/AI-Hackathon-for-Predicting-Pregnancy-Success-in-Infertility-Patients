@@ -44,11 +44,6 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Jupyter 커널 등록:
-```bash
-python -m ipykernel install --user --name=pregnancy-prediction --display-name="Python (pregnancy-prediction)"
-```
-
 ---
 
 ## 데이터
@@ -70,13 +65,12 @@ python -m ipykernel install --user --name=pregnancy-prediction --display-name="P
 
 ```
 main          ← 최종 제출본만 머지
-├── dev       ← 통합 브랜치 (각자 작업 머지 후 검토)
 ├── feat/이름-작업명   ← 개인 실험 브랜치
 └── fix/이름-버그명    ← 버그 수정
 ```
 
 - 작업은 항상 `feat/이름-작업명` 브랜치에서 시작
-- `dev`로 PR → 팀원 1명 이상 리뷰 후 머지
+- `main` 브랜치에 머지로 PR → 팀원 1명 이상 리뷰 후 머지
 - `main` 직접 push 금지
 
 ### 노트북 네이밍
