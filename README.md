@@ -65,7 +65,7 @@ pip install -r requirements.txt
 
 ```
 main          ← 최종 제출본만 머지
-├── feat/이름-작업명   ← 개인 실험 브랜치
+├── feature/이름-작업명   ← 개인 실험 브랜치
 └── fix/이름-버그명    ← 버그 수정
 ```
 
