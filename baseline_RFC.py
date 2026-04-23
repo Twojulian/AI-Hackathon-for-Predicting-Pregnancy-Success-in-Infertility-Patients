@@ -38,8 +38,10 @@ DONOR_AGE_MAP = {
     "알 수 없음": 0, "Unknown": 0
 }
 
+label_encoders = {}
+
 # ────────────────────────────────────────────
-# 공통 전처리 함수
+# 전처리 함수 정의 (← 호출보다 반드시 먼저!)
 # ────────────────────────────────────────────
 def convert_count(val):
     if pd.isna(val) or val == "Unknown":
@@ -51,12 +53,13 @@ def convert_count(val):
     except:
         return 0
 
-def base_preprocess(df, label_encoders, is_train=True):
-    """공통 전처리 (나이 변환, count 변환, 인코딩 등)"""
+def preprocess(df, is_train=True):
     df = df.copy()
 
     ids = df["ID"].copy() if "ID" in df.columns else None
     df = df.drop(columns=["ID"], errors="ignore")
+
+    df = df.drop(columns=[c for c in HIGH_NULL_COLS if c in df.columns])
 
     num_cols = df.select_dtypes(include="number").columns.tolist()
     num_cols = [c for c in num_cols if c != "임신 성공 여부"]
@@ -95,161 +98,87 @@ def base_preprocess(df, label_encoders, is_train=True):
     return df, ids
 
 # ────────────────────────────────────────────
-# 버전 A: 결측 컬럼 삭제 (기존 베이스라인)
-# ────────────────────────────────────────────
-def preprocess_v1(df, label_encoders, is_train=True):
-    df = df.copy()
-    df = df.drop(columns=[c for c in HIGH_NULL_COLS if c in df.columns])
-    return base_preprocess(df, label_encoders, is_train)
-
-# ────────────────────────────────────────────
-# 버전 B: 결측 컬럼 살리기 (플래그 + 의미 있는 채우기)
-# ────────────────────────────────────────────
-def preprocess_v2(df, label_encoders, is_train=True):
-    df = df.copy()
-
-    # 수치형: -1로 채우고 결측 플래그 추가 (0일 vs 결측 구분)
-    numeric_null_cols = ["난자 해동 경과일", "배아 해동 경과일", "임신 시도 또는 마지막 임신 경과 연수"]
-    for col in numeric_null_cols:
-        if col in df.columns:
-            df[f"{col}_결측"] = df[col].isna().astype(int)
-            df[col] = df[col].fillna(-1)
-
-    # 범주형: "미시행" 카테고리로 명시적 처리
-    category_null_cols = ["착상 전 유전 검사 사용 여부", "PGD 시술 여부", "PGS 시술 여부"]
-    for col in category_null_cols:
-        if col in df.columns:
-            df[col] = df[col].fillna("미시행")
-
-    return base_preprocess(df, label_encoders, is_train)
-
-# ────────────────────────────────────────────
-# 모델 학습 및 평가 공통 함수
-# ────────────────────────────────────────────
-def train_and_evaluate(X_train, y_train, X_val, y_val, label=""):
-    model = RandomForestClassifier(
-        n_estimators=100,
-        max_depth=10,
-        class_weight="balanced",
-        random_state=42,
-        n_jobs=-1
-    )
-    model.fit(X_train, y_train)
-
-    val_preds = model.predict(X_val)
-    val_proba = model.predict_proba(X_val)[:, 1]
-    auc = roc_auc_score(y_val, val_proba)
-
-    print(f"\n{'='*50}")
-    print(f"[{label}] 검증 성능 결과")
-    print(f"{'='*50}")
-    print(classification_report(y_val, val_preds, target_names=["실패(0)", "성공(1)"]))
-    print(f"AUC-ROC: {auc:.4f}")
-
-    return model, auc, val_proba
-
-# ────────────────────────────────────────────
-# 1. 데이터 불러오기
+# 1. 데이터 불러오기 및 전처리 (← 함수 정의 후에 호출)
 # ────────────────────────────────────────────
 train_raw = pd.read_csv("/Users/admin/Desktop/infertility/open (1)/train.csv")
 test_raw  = pd.read_csv("/Users/admin/Desktop/infertility/open (1)/test.csv")
 
-# ────────────────────────────────────────────
-# 2. 버전 A 전처리 (결측 컬럼 삭제)
-# ────────────────────────────────────────────
-le_v1 = {}
-train_v1, _         = preprocess_v1(train_raw, le_v1, is_train=True)
-test_v1, test_ids   = preprocess_v1(test_raw,  le_v1, is_train=False)
+train_df, _       = preprocess(train_raw, is_train=True)
+test_df, test_ids = preprocess(test_raw,  is_train=False)
 
-X_v1 = train_v1.drop("임신 성공 여부", axis=1)
-y_v1 = train_v1["임신 성공 여부"]
-X_submit_v1 = test_v1.drop(columns=["임신 성공 여부"], errors="ignore")
+# ────────────────────────────────────────────
+# 2. X / y 분리
+# ────────────────────────────────────────────
+X = train_df.drop("임신 성공 여부", axis=1)
+y = train_df["임신 성공 여부"]
 
-X_train_v1, X_val_v1, y_train_v1, y_val_v1 = train_test_split(
-    X_v1, y_v1, test_size=0.2, random_state=42, stratify=y_v1
+X_submit = test_df.drop(columns=["임신 성공 여부"], errors="ignore")
+
+X_train, X_val, y_train, y_val = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y
 )
 
-# ────────────────────────────────────────────
-# 3. 버전 B 전처리 (결측 컬럼 살리기)
-# ────────────────────────────────────────────
-le_v2 = {}
-train_v2, _         = preprocess_v2(train_raw, le_v2, is_train=True)
-test_v2, test_ids   = preprocess_v2(test_raw,  le_v2, is_train=False)
+print(f"Train: {X_train.shape}, Val: {X_val.shape}, Submit: {X_submit.shape}")
+print(f"클래스 비율 (train) - 0: {(y_train==0).sum()}, 1: {(y_train==1).sum()}")
 
-X_v2 = train_v2.drop("임신 성공 여부", axis=1)
-y_v2 = train_v2["임신 성공 여부"]
-X_submit_v2 = test_v2.drop(columns=["임신 성공 여부"], errors="ignore")
-
-X_train_v2, X_val_v2, y_train_v2, y_val_v2 = train_test_split(
-    X_v2, y_v2, test_size=0.2, random_state=42, stratify=y_v2
+# ────────────────────────────────────────────
+# 3. 모델 학습
+# ────────────────────────────────────────────
+model = RandomForestClassifier(
+    n_estimators=100,
+    max_depth=10,
+    class_weight="balanced",
+    random_state=42,
+    n_jobs=-1
 )
-
-print(f"\n[버전 A] 피처 수: {X_v1.shape[1]}")
-print(f"[버전 B] 피처 수: {X_v2.shape[1]} (결측 플래그 컬럼 추가됨)")
+model.fit(X_train, y_train)
 
 # ────────────────────────────────────────────
-# 4. 학습 및 평가
+# 4. 검증 성능 평가
 # ────────────────────────────────────────────
-model_v1, auc_v1, proba_v1 = train_and_evaluate(
-    X_train_v1, y_train_v1, X_val_v1, y_val_v1,
-    label="버전 A: 결측 컬럼 삭제 (베이스라인)"
-)
+val_preds = model.predict(X_val)
+val_proba = model.predict_proba(X_val)[:, 1]
 
-model_v2, auc_v2, proba_v2 = train_and_evaluate(
-    X_train_v2, y_train_v2, X_val_v2, y_val_v2,
-    label="버전 B: 결측 컬럼 살리기 (플래그 + 의미 채우기)"
-)
+print("\n--- 검증 성능 결과 ---")
+print(classification_report(y_val, val_preds, target_names=["실패(0)", "성공(1)"]))
+print(f"AUC-ROC: {roc_auc_score(y_val, val_proba):.4f}")
 
 # ────────────────────────────────────────────
-# 5. AUC 비교 요약
+# 5. 중요 변수 확인
 # ────────────────────────────────────────────
-print(f"\n{'='*50}")
-print(f"📊 AUC-ROC 비교 요약")
-print(f"{'='*50}")
-print(f"버전 A (삭제):   {auc_v1:.4f}")
-print(f"버전 B (살리기): {auc_v2:.4f}")
-diff = auc_v2 - auc_v1
-print(f"차이 (B - A):    {diff:+.4f}  {'✅ B가 더 좋음' if diff > 0 else '❌ A가 더 좋음' if diff < 0 else '➖ 동일'}")
-
-# ────────────────────────────────────────────
-# 6. 피처 중요도 비교 시각화
-# ────────────────────────────────────────────
-fig, axes = plt.subplots(1, 2, figsize=(16, 6))
-
-fi_v1 = pd.Series(model_v1.feature_importances_, index=X_v1.columns)
-fi_v1.nlargest(10).plot(kind="barh", ax=axes[0], color="steelblue")
-axes[0].set_title(f"버전 A - Top 10 Features\nAUC: {auc_v1:.4f}", fontsize=13)
-axes[0].invert_yaxis()
-
-fi_v2 = pd.Series(model_v2.feature_importances_, index=X_v2.columns)
-fi_v2.nlargest(10).plot(kind="barh", ax=axes[1], color="coral")
-axes[1].set_title(f"버전 B - Top 10 Features\nAUC: {auc_v2:.4f}", fontsize=13)
-axes[1].invert_yaxis()
-
-plt.suptitle("피처 중요도 비교: 결측 컬럼 삭제 vs 살리기", fontsize=15, fontweight="bold")
+feature_importances = pd.Series(model.feature_importances_, index=X.columns)
+feature_importances.nlargest(10).plot(kind="barh")
+plt.title("Top 10 Important Features")
 plt.tight_layout()
-plt.savefig("feature_importance_comparison.png", dpi=150)
+plt.savefig("feature_importance.png", dpi=150)
 plt.show()
-print("\n비교 그래프 저장 완료: feature_importance_comparison.png")
 
 # ────────────────────────────────────────────
-# 7. 더 좋은 버전으로 제출 파일 생성
+# 6. 제출 파일 생성
 # ────────────────────────────────────────────
-if auc_v2 >= auc_v1:
-    best_model    = model_v2
-    X_submit_best = X_submit_v2
-    best_version  = "B"
-else:
-    best_model    = model_v1
-    X_submit_best = X_submit_v1
-    best_version  = "A"
+submit_preds = model.predict(X_submit)
 
-submit_proba = best_model.predict_proba(X_submit_best)[:, 1]
 submission = pd.DataFrame({
     "ID": test_ids,
-    "probability": submit_proba
+    "임신 성공 여부": submit_preds
 })
-submission.to_csv(f"submission_best_v{best_version}.csv", index=False)
-print(f"\n✅ 버전 {best_version} 기준으로 제출 파일 생성 완료!")
+
+submission.to_csv("03_baseRFC_SYJ.csv", index=False)
+print("\n제출용 파일 '03_baseRFC_SYJ.csv' 생성 완료!")
+print(submission.head())
+print(f"총 {len(submission)}개 예측 완료")
+
+# ────────────────────────────────────────────
+# 6. 제출 파일 생성
+# ────────────────────────────────────────────
+submit_proba = model.predict_proba(X_submit)[:, 1]  # 확률값 (1일 확률)
+
+submission = pd.DataFrame({
+    "ID": test_ids,
+    "probability": submit_proba  # 컬럼명도 변경!
+})
+
+submission.to_csv("03_baseRFC_SYJ.csv", index=False)
+print("\n제출용 파일 '03_baseRFC_SYJ.csv' 생성 완료!")
 print(submission.head())
 print(f"총 {len(submission)}개 예측 완료")
