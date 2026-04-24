@@ -1,0 +1,23 @@
+artifact_path: /Users/hyonji/AI-Hackathon-for-Predicting-Pregnancy-Success-in-Infertility-Patients/mlruns/1/models/m-0f4444d2123b472da5aa6b38f126758b/artifacts
+flavors:
+  python_function:
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.sklearn
+    model_path: model.pkl
+    predict_fn: predict
+    python_version: 3.12.7
+  sklearn:
+    code: null
+    pickled_model: model.pkl
+    serialization_format: cloudpickle
+    sklearn_version: 1.8.0
+    skops_trusted_types: null
+mlflow_version: 3.11.1
+model_id: m-0f4444d2123b472da5aa6b38f126758b
+model_size_bytes: 2264
+model_uuid: m-0f4444d2123b472da5aa6b38f126758b
+prompts: null
+run_id: 5a6e6586167b49859b821d6d02d42381
+utc_time_created: '2026-04-23 12:22:11.082746'
