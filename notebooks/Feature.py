@@ -261,17 +261,105 @@ plt.tight_layout()
 plt.savefig("feature_importance_v3.png", dpi=150)
 plt.show()
 
-# ════════════════════════════════════════════════════════════
-# 6. 제출 파일 생성
-# ════════════════════════════════════════════════════════════
-submit_proba = model.predict_proba(X_submit)[:, 1]
+# # ════════════════════════════════════════════════════════════
+# # 6. 제출 파일 생성
+# # ════════════════════════════════════════════════════════════
+# submit_proba = model.predict_proba(X_submit)[:, 1]
 
-submission = pd.DataFrame({
+# submission = pd.DataFrame({
+#     "ID": test_ids,
+#     "probability": submit_proba
+# })
+
+# submission.to_csv("baseline_RFC_v3.csv", index=False)
+# print("\n제출용 파일 'baseline_RFC_v3.csv' 생성 완료!")
+# print(submission.head())
+# print(f"총 {len(submission)}개 예측 완료")
+
+# ════════════════════════════════════════════════════════════
+# [추가] 피처 개수별 AUC 스윕 — 최적 threshold 탐색
+# 전제: 기존 코드 + 1차 model 학습 완료 상태
+# ════════════════════════════════════════════════════════════
+
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import roc_auc_score
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# ── Step 1. 피처 중요도 내림차순 정렬 ───────────────────────
+feature_importances = pd.Series(model.feature_importances_, index=X_train.columns)
+sorted_features = feature_importances.sort_values(ascending=False)
+
+total_features = len(sorted_features)
+auc_orig = roc_auc_score(y_val, model.predict_proba(X_val)[:, 1])
+
+print(f"전체 피처 수: {total_features}개  |  기준 AUC: {auc_orig:.4f}\n")
+
+# ── Step 2. Top N 스윕 (10개 간격 + 세밀 구간) ──────────────
+# 전체 피처 수에 맞게 자동 설정
+step = max(5, total_features // 20)   # 피처가 많으면 간격 넓히기
+candidates = list(range(10, total_features, step))
+if total_features not in candidates:
+    candidates.append(total_features)  # 전체도 포함
+
+results = []
+
+for n in candidates:
+    top_n_features = sorted_features.index[:n].tolist()
+
+    rf = RandomForestClassifier(
+        n_estimators=100,
+        max_depth=10,
+        class_weight="balanced",
+        random_state=42,
+        n_jobs=-1
+    )
+    rf.fit(X_train[top_n_features], y_train)
+    auc = roc_auc_score(y_val, rf.predict_proba(X_val[top_n_features])[:, 1])
+    delta = auc - auc_orig
+
+    results.append({"n_features": n, "auc": auc, "delta": delta, "model": rf, "features": top_n_features})
+    marker = " ◀ 최고" if auc == max(r["auc"] for r in results) else ""
+    print(f"  Top {n:>3}개  AUC: {auc:.4f}  ({'+' if delta>=0 else ''}{delta:.4f}){marker}")
+
+# ── Step 3. 최적 N 선택 ──────────────────────────────────────
+results_df = pd.DataFrame([{"n_features": r["n_features"], "auc": r["auc"], "delta": r["delta"]} for r in results])
+best = max(results, key=lambda r: r["auc"])
+
+print(f"\n{'='*50}")
+print(f"  ✅ 최적 피처 수: Top {best['n_features']}개  |  AUC: {best['auc']:.4f}")
+print(f"  기준 대비: {'+' if best['delta']>=0 else ''}{best['delta']:.4f}")
+print(f"{'='*50}\n")
+print("선택된 피처 목록:")
+for i, f in enumerate(best["features"], 1):
+    print(f"  {i:>3}. {f}  ({feature_importances[f]:.4f})")
+
+# ── Step 4. 시각화 ───────────────────────────────────────────
+fig, ax = plt.subplots(figsize=(12, 5))
+ax.plot(results_df["n_features"], results_df["auc"], marker="o", color="steelblue", linewidth=2, label="Top N AUC")
+ax.axhline(auc_orig, color="gray", linestyle="--", linewidth=1.5, label=f"전체 피처 AUC ({auc_orig:.4f})")
+ax.axvline(best["n_features"], color="coral", linestyle="--", linewidth=1.5, label=f"최적 N={best['n_features']} ({best['auc']:.4f})")
+ax.scatter([best["n_features"]], [best["auc"]], color="coral", s=120, zorder=5)
+
+ax.set_xlabel("피처 수 (Top N)", fontsize=12)
+ax.set_ylabel("AUC-ROC", fontsize=12)
+ax.set_title("피처 수에 따른 AUC 변화", fontsize=13)
+ax.legend(fontsize=10)
+ax.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.savefig("auc_by_n_features.png", dpi=150)
+plt.show()
+
+# ── Step 5. 최적 N으로 제출 파일 생성 ───────────────────────
+best_model    = best["model"]
+best_features = best["features"]
+
+submit_proba = best_model.predict_proba(X_submit[best_features])[:, 1]
+
+submission_best = pd.DataFrame({
     "ID": test_ids,
     "probability": submit_proba
 })
-
-submission.to_csv("baseline_RFC_v3.csv", index=False)
-print("\n제출용 파일 'baseline_RFC_v3.csv' 생성 완료!")
-print(submission.head())
-print(f"총 {len(submission)}개 예측 완료")
+submission_best.to_csv(f"baseline_RFC_top{best['n_features']}.csv", index=False)
+print(f"\n제출 파일 'baseline_RFC_top{best['n_features']}.csv' 생성 완료!")
+print(f"총 {len(submission_best)}개 예측 완료")
