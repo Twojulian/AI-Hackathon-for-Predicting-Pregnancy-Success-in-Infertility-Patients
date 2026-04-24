@@ -254,7 +254,7 @@ print("=" * 60)
 print("🔬 7. 배아 관련 변수 분석")
 print("=" * 60)
 embryo_cols = ['총 생성 배아 수', '이식된 배아 수', '저장된 배아 수',
-               '미세주입된 난자 수', '수집된 신선 난자 수']
+                '미세주입된 난자 수', '수집된 신선 난자 수']
 embryo_cols_exist = [c for c in embryo_cols if c in df.columns]
 
 fig, axes = plt.subplots(1, len(embryo_cols_exist), figsize=(18, 5))
