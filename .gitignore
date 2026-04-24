@@ -1,3 +1,47 @@
 *.csv
 *.xlsx
+
+# 데이터 (원본 및 제출 파일)
+data/raw/
+data/processed/
+data/submissions/
+
+# 실험 산출물 (설정과 README, metrics는 올리고 바이너리는 제외)
+experiments/**/*.pkl
+experiments/**/*.npy
+experiments/**/submission.csv
+
+# 모델 파일
+*.lgb
+*.cbm
+*.json.model
+
+# 파이썬
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.ipynb_checkpoints/
+.venv/
+
+# OS
 .DS_Store
+
+# logs
+*.log
+
+# uploads
+uploads/
+
+# model weights
+*.pt
+*.pth
+
+# IDE
+.vscode/
+.idea/
+
+# Environment
+.env
+venv/
+.env.*
