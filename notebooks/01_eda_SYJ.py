@@ -7,7 +7,7 @@ Original file is located at
     https://colab.research.google.com/drive/1JooDDn2Pkm3lQj2dkqerz7lm0Apdrsys
 """
 
-pip install koreanize-matplotlib
+# pip install koreanize-matplotlib
 
 import pandas as pd
 import numpy as np
@@ -92,7 +92,7 @@ print(f"\n결측치 있는 컬럼 수: {len(missing_df)} / {df.shape[1]}")
 if len(missing_df) > 0:
     fig, ax = plt.subplots(figsize=(10, max(5, len(missing_df) * 0.4)))
     colors = ['#EF5350' if r > 50 else '#FFA726' if r > 20 else '#66BB6A'
-              for r in missing_df['결측률(%)']]
+                for r in missing_df['결측률(%)']]
     bars = ax.barh(missing_df.index, missing_df['결측률(%)'], color=colors)
     ax.set_xlabel('결측률 (%)')
     ax.set_title('컬럼별 결측률', fontsize=13, fontweight='bold')
@@ -291,3 +291,197 @@ print()
 print("생성된 파일:")
 for i in range(1, 8):
     print(f"  eda_0{i}_*.png")
+
+# ══════════════════════════════════════════════════════════════
+# 추가 EDA 1. 불임 원인 조합 분석
+# ══════════════════════════════════════════════════════════════
+print("=" * 60)
+print("🧬 추가 EDA 1. 불임 원인 조합 분석")
+print("=" * 60)
+
+infertility_cols = [
+    '불임 원인 - 난관 질환', '불임 원인 - 남성 요인', '불임 원인 - 배란 장애',
+    '불임 원인 - 여성 요인', '불임 원인 - 자궁경부 문제', '불임 원인 - 자궁내막증',
+    '불임 원인 - 정자 농도', '불임 원인 - 정자 면역학적 요인',
+    '불임 원인 - 정자 운동성', '불임 원인 - 정자 형태',
+    '불명확 불임 원인',
+    '남성 주 불임 원인', '남성 부 불임 원인',
+    '여성 주 불임 원인', '여성 부 불임 원인',
+]
+infertility_cols = [c for c in infertility_cols if c in df.columns]
+
+# 1-1. 원인별 성공률 비교
+inf_success = {}
+for col in infertility_cols:
+    group = df[df[col] == 1]
+    if len(group) > 100:
+        inf_success[col] = {
+            '성공률': group['임신 성공 여부'].mean() * 100,
+            '샘플 수': len(group)
+        }
+
+inf_df = pd.DataFrame(inf_success).T.sort_values('성공률', ascending=True)
+overall_rate = df['임신 성공 여부'].mean() * 100
+print(f"\n전체 평균 성공률: {overall_rate:.2f}%")
+print(inf_df.round(2).to_string())
+
+# 1-2. 불임 원인 개수 분포
+specific_causes = [c for c in infertility_cols if '불임 원인 -' in c]
+df['불임_원인_개수'] = df[specific_causes].sum(axis=1)
+cause_count_success = df.groupby('불임_원인_개수')['임신 성공 여부'].agg(['mean', 'count'])
+cause_count_success.columns = ['성공률', '샘플 수']
+cause_count_success['성공률'] *= 100
+print(f"\n[불임 원인 개수별 성공률]")
+print(cause_count_success.round(2).to_string())
+
+fig, axes = plt.subplots(1, 2, figsize=(16, 7))
+fig.suptitle('불임 원인 조합 분석', fontsize=14, fontweight='bold')
+
+# 원인별 성공률 bar
+colors = ['#EF5350' if v < overall_rate else '#42A5F5' for v in inf_df['성공률']]
+bars = axes[0].barh(range(len(inf_df)), inf_df['성공률'], color=colors)
+axes[0].set_yticks(range(len(inf_df)))
+axes[0].set_yticklabels(inf_df.index, fontsize=8)
+axes[0].axvline(overall_rate, color='black', linestyle='--', linewidth=1.2, label=f'전체 평균 {overall_rate:.1f}%')
+axes[0].set_xlabel('임신 성공률 (%)')
+axes[0].set_title('불임 원인별 임신 성공률\n(파랑=평균 이상, 빨강=평균 이하)')
+axes[0].legend(fontsize=9)
+for bar, val in zip(bars, inf_df['성공률']):
+    axes[0].text(bar.get_width() + 0.2, bar.get_y() + bar.get_height()/2,
+                    f'{val:.1f}%', va='center', fontsize=8)
+
+# 원인 개수별 성공률
+valid = cause_count_success[cause_count_success['샘플 수'] >= 100]
+axes[1].bar(valid.index.astype(str), valid['성공률'],
+            color=plt.cm.RdYlGn(np.linspace(0.8, 0.2, len(valid))))
+axes[1].axhline(overall_rate, color='black', linestyle='--', linewidth=1.2, label=f'전체 평균 {overall_rate:.1f}%')
+axes[1].set_xlabel('불임 원인 개수')
+axes[1].set_ylabel('임신 성공률 (%)')
+axes[1].set_title('불임 원인 개수별 임신 성공률')
+axes[1].legend(fontsize=9)
+for i, (idx, row) in enumerate(valid.iterrows()):
+    axes[1].text(i, row['성공률'] + 0.3, f"{row['성공률']:.1f}%", ha='center', fontsize=9)
+
+plt.tight_layout()
+plt.savefig('eda_08_infertility_cause.png', dpi=150, bbox_inches='tight')
+plt.show()
+print("✅ 저장: eda_08_infertility_cause.png\n")
+
+
+# ══════════════════════════════════════════════════════════════
+# 추가 EDA 2. 시술 횟수 vs 성공률
+# ══════════════════════════════════════════════════════════════
+print("=" * 60)
+print("🔁 추가 EDA 2. 시술 횟수 vs 임신 성공률")
+print("=" * 60)
+
+count_cols = {
+    '총 시술 횟수': '전체',
+    '클리닉 내 총 시술 횟수': '클리닉 내',
+    'IVF 시술 횟수': 'IVF',
+    'DI 시술 횟수': 'DI',
+}
+count_cols = {k: v for k, v in count_cols.items() if k in df.columns}
+
+# 횟수 컬럼 숫자 변환 (범주형으로 저장된 경우 대비)
+order_map = {'0회': 0, '1회': 1, '2회': 2, '3회': 3, '4회': 4, '5회': 5, '6회 이상': 6}
+for col in count_cols:
+    if df[col].dtype == object:
+        df[col + '_num'] = df[col].map(order_map)
+    else:
+        df[col + '_num'] = df[col]
+
+fig, axes = plt.subplots(1, len(count_cols), figsize=(18, 6))
+fig.suptitle('시술 횟수별 임신 성공률', fontsize=14, fontweight='bold')
+if len(count_cols) == 1:
+    axes = [axes]
+
+for i, (col, label) in enumerate(count_cols.items()):
+    num_col = col + '_num'
+    grp = df.groupby(num_col)['임신 성공 여부'].agg(['mean', 'count']).reset_index()
+    grp = grp[grp['count'] >= 100]
+    grp['mean'] *= 100
+
+    color_vals = plt.cm.Blues(np.linspace(0.3, 0.9, len(grp)))
+    bars = axes[i].bar(grp[num_col].astype(str), grp['mean'], color=color_vals)
+    axes[i].axhline(overall_rate, color='red', linestyle='--', linewidth=1, label=f'전체 평균 {overall_rate:.1f}%')
+    axes[i].set_xlabel('시술 횟수')
+    axes[i].set_ylabel('임신 성공률 (%)')
+    axes[i].set_title(f'{label} 시술 횟수별 성공률')
+    axes[i].legend(fontsize=8)
+    for bar, (_, row) in zip(bars, grp.iterrows()):
+        axes[i].text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.3,
+                        f"{row['mean']:.1f}%", ha='center', fontsize=8)
+
+    print(f"\n[{label} 시술 횟수별 성공률]")
+    print(grp[[num_col, 'mean', 'count']].rename(
+        columns={num_col: '횟수', 'mean': '성공률(%)', 'count': '샘플 수'}).to_string(index=False))
+
+plt.tight_layout()
+plt.savefig('eda_09_attempt_vs_success.png', dpi=150, bbox_inches='tight')
+plt.show()
+print("\n✅ 저장: eda_09_attempt_vs_success.png\n")
+
+
+# ══════════════════════════════════════════════════════════════
+# 추가 EDA 3. 경과일 변수 결측 패턴 분석
+# ══════════════════════════════════════════════════════════════
+print("=" * 60)
+print("📅 추가 EDA 3. 경과일 변수 결측 패턴 분석")
+print("=" * 60)
+
+date_cols = ['난자 채취 경과일', '난자 해동 경과일', '난자 혼합 경과일', '배아 이식 경과일', '배아 해동 경과일']
+date_cols = [c for c in date_cols if c in df.columns]
+
+# 3-1. 시술 유형별 결측률
+print("\n[시술 유형별 경과일 결측률 (%)]")
+missing_by_type = df.groupby('시술 유형')[date_cols].apply(
+    lambda x: x.isnull().mean() * 100).round(1)
+print(missing_by_type.to_string())
+
+# 3-2. 결측 패턴 (어떤 조합으로 결측되는지)
+df['경과일_결측_패턴'] = df[date_cols].isnull().astype(int).astype(str).apply(''.join, axis=1)
+pattern_counts = df['경과일_결측_패턴'].value_counts().head(10)
+pattern_success = df.groupby('경과일_결측_패턴')['임신 성공 여부'].mean() * 100
+
+print(f"\n[경과일 결측 패턴 상위 10개] (1=결측, 0=존재, 순서: {date_cols})")
+pattern_df = pd.DataFrame({'빈도': pattern_counts, '성공률(%)': pattern_success}).dropna()
+pattern_df['성공률(%)'] = pattern_df['성공률(%)'].round(2)
+print(pattern_df.to_string())
+
+fig, axes = plt.subplots(1, 2, figsize=(16, 7))
+fig.suptitle('경과일 변수 결측 패턴 분석', fontsize=14, fontweight='bold')
+
+# 시술 유형별 결측률 히트맵
+sns.heatmap(missing_by_type, annot=True, fmt='.1f', cmap='Reds',
+            ax=axes[0], linewidths=0.5, cbar_kws={'label': '결측률 (%)'})
+axes[0].set_title('시술 유형별 경과일 결측률 (%)')
+axes[0].set_xlabel('경과일 변수')
+axes[0].set_ylabel('시술 유형')
+axes[0].tick_params(axis='x', rotation=30, labelsize=8)
+
+# 결측 패턴별 성공률
+top_patterns = pattern_df.head(8)
+bar_colors = ['#42A5F5' if v >= overall_rate else '#EF5350' for v in top_patterns['성공률(%)']]
+axes[1].barh(range(len(top_patterns)), top_patterns['성공률(%)'], color=bar_colors)
+axes[1].set_yticks(range(len(top_patterns)))
+axes[1].set_yticklabels([f"{p}\n(n={int(top_patterns['빈도'].iloc[i]):,})"
+                            for i, p in enumerate(top_patterns.index)], fontsize=8)
+axes[1].axvline(overall_rate, color='black', linestyle='--', linewidth=1.2,
+                label=f'전체 평균 {overall_rate:.1f}%')
+axes[1].set_xlabel('임신 성공률 (%)')
+axes[1].set_title(f'결측 패턴별 성공률\n(1=결측, 순서: 채취/해동/혼합/이식/배아해동)')
+axes[1].legend(fontsize=9)
+
+plt.tight_layout()
+plt.savefig('eda_10_missing_pattern.png', dpi=150, bbox_inches='tight')
+plt.show()
+print("✅ 저장: eda_10_missing_pattern.png\n")
+
+print("=" * 60)
+print("📋 추가 EDA 완료")
+print("=" * 60)
+print("생성된 파일:")
+print("  eda_08_infertility_cause.png  - 불임 원인 조합 분석")
+print("  eda_09_attempt_vs_success.png - 시술 횟수 vs 성공률")
+print("  eda_10_missing_pattern.png    - 경과일 결측 패턴 분석")
