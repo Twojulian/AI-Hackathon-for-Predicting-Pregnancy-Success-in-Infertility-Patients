@@ -224,8 +224,29 @@ print(f"\n분류 리포트 (앙상블):")
 print(classification_report(y_val, val_ensemble_pred))
 
 
-submission = pd.DataFrame({"ID": test_ids, "probability": ensemble_pred})
-submission.to_csv("ensemble_rf_xgb_et.csv", index=False)
-print("\n✅ 앙상블 제출 파일 생성 완료!")
-print(submission.head())
-print(f"총 {len(submission)}개 예측 완료")
+# submission = pd.DataFrame({"ID": test_ids, "probability": ensemble_pred})
+# submission.to_csv("ensemble_rf_xgb_et.csv", index=False)
+# print("\n✅ 앙상블 제출 파일 생성 완료!")
+# print(submission.head())
+# print(f"총 {len(submission)}개 예측 완료")
+
+
+# RF에 가중치 더 주는 앙상블
+pred_rf = final_rf.predict_proba(X_submit_30)[:, 1]
+pred_xgb = final_xgb.predict_proba(X_submit_30)[:, 1]
+pred_et = final_et.predict_proba(X_submit_30)[:, 1]
+
+# RF 0.5, XGB 0.25, ET 0.25
+ensemble_pred_weighted = (pred_rf * 0.5 + pred_xgb * 0.25 + pred_et * 0.25)
+
+# Val AUC 확인
+val_weighted = (
+    final_rf.predict_proba(X_val_30)[:, 1] * 0.5 +
+    final_xgb.predict_proba(X_val_30)[:, 1] * 0.25 +
+    final_et.predict_proba(X_val_30)[:, 1] * 0.25
+)
+print(f"가중치 앙상블 Val AUC: {roc_auc_score(y_val, val_weighted):.4f}")
+
+submission_weighted = pd.DataFrame({"ID": test_ids, "probability": ensemble_pred_weighted})
+submission_weighted.to_csv("ensemble_weighted.csv", index=False)
+print("✅ 가중치 앙상블 파일 생성 완료!")
