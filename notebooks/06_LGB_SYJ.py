@@ -10,6 +10,9 @@ from sklearn.metrics import classification_report, confusion_matrix
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 
+import optuna
+optuna.logging.set_verbosity(optuna.logging.WARNING)
+
 warnings.filterwarnings("ignore")
 
 
@@ -193,20 +196,38 @@ X_train, X_val, y_train, y_val = train_test_split(
 # ════════════════════════════════════════════════════════════
 scale_pos_weight = (y_train == 0).sum() / (y_train == 1).sum()
 
-best_params = {
-    "n_estimators":      500,
-    "learning_rate":     0.05,
-    "num_leaves":        31,
-    "max_depth":         -1,
-    "min_child_samples": 20,
-    "subsample":         0.8,
-    "colsample_bytree":  0.8,
-    "scale_pos_weight":  38025 / 13246,  # 클래스 불균형 자동 보정
-    "random_state":      42,
-    "n_jobs":            -1,
-    "verbose":           -1,
-}
+def objective(trial):
+    params = {
+        "n_estimators":      trial.suggest_int("n_estimators", 100, 500),
+        "learning_rate":     trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
+        "num_leaves":        trial.suggest_int("num_leaves", 20, 150),
+        "max_depth":         trial.suggest_int("max_depth", 3, 12),
+        "min_child_samples": trial.suggest_int("min_child_samples", 5, 100),
+        "subsample":         trial.suggest_float("subsample", 0.5, 1.0),
+        "colsample_bytree":  trial.suggest_float("colsample_bytree", 0.5, 1.0),
+        "reg_alpha":         trial.suggest_float("reg_alpha", 1e-8, 10.0, log=True),
+        "reg_lambda":        trial.suggest_float("reg_lambda", 1e-8, 10.0, log=True),
+        "scale_pos_weight":  scale_pos_weight,
+        "random_state":      42,
+        "n_jobs":            -1,
+        "verbose":           -1,
+    }
+    model = lgb.LGBMClassifier(**params)
+    score = cross_val_score(
+        model, X_train, y_train,
+        cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=42),
+        scoring="roc_auc", n_jobs=1
+    ).mean()
+    return score
 
+study = optuna.create_study(direction="maximize")
+study.optimize(objective, n_trials=50, show_progress_bar=True)
+
+print(f"Best CV AUC: {study.best_value:.4f}")
+print(f"Best Params: {study.best_params}")
+
+best_params = {**study.best_params, "scale_pos_weight": scale_pos_weight,
+                "random_state": 42, "n_jobs": -1, "verbose": -1}
 
 
 # 1) val AUC 측정
@@ -219,7 +240,6 @@ val_proba = check_model.predict_proba(X_val)[:, 1]
 
 print(f"사용 피처 수: {X_train.shape[1]}")
 
-print(f"Val AUC: {val_auc:.4f}")
 print("\n[Classification Report]")
 print(classification_report(y_val, val_pred))
 print("\n[Confusion Matrix]")
@@ -249,7 +269,6 @@ submission = pd.DataFrame({
     "ID": test_ids,
     "probability": final_model.predict_proba(X_submit)[:, 1]
 })
-submission.to_csv("submission_exp016_SYJ.csv", index=False)
-print("제출 파일 'submission_exp016_SYJ.csv' 생성 완료!")
+submission.to_csv("submission_exp017_SYJ.csv", index=False)
+print("제출 파일 'submission_exp017_SYJ.csv' 생성 완료!")
 print(submission.head())
-
