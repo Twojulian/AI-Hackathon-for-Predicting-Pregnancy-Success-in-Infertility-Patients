@@ -42,3 +42,4 @@ uploads/
 .env
 venv/
 .env.*
+notebooks/catboost_info/
