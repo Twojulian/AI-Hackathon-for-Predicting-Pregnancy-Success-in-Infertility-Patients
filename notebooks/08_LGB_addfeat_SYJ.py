@@ -384,3 +384,115 @@ feat_imp = pd.Series(cat_model.get_feature_importance(),
                         index=X_train.columns)
 print("\n[Feature Importance Top 15]")
 print(feat_imp.nlargest(15))
+
+# ════════════════════════════════════════════════════════════
+# Optuna 가중치 앙상블 (LGB + CAT + XGB)
+# ════════════════════════════════════════════════════════════
+from xgboost import XGBClassifier
+import optuna
+optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+# ── XGB 학습 (아직 없으면) ──
+xgb_params = {
+    "n_estimators":     500,
+    "learning_rate":    0.05,
+    "max_depth":        6,
+    "min_child_weight": 1,
+    "subsample":        0.8,
+    "colsample_bytree": 0.8,
+    "scale_pos_weight": scale_pos_weight,
+    "random_state":     42,
+    "n_jobs":           -1,
+    "verbosity":        0,
+    "eval_metric":      "auc",
+}
+xgb_model = XGBClassifier(**xgb_params)
+xgb_model.fit(X_train, y_train)
+
+# ── 각 모델 Val 확률 ──
+lgb_proba = check_model.predict_proba(X_val)[:, 1]   # 위 셀에서 학습된 LGB
+cat_proba = cat_model.predict_proba(X_val)[:, 1]     # 위 셀에서 학습된 CAT
+xgb_proba = xgb_model.predict_proba(X_val)[:, 1]
+
+lgb_auc = roc_auc_score(y_val, lgb_proba)
+cat_auc = roc_auc_score(y_val, cat_proba)
+xgb_auc = roc_auc_score(y_val, xgb_proba)
+
+print(f"LGB Val AUC: {lgb_auc:.4f}")
+print(f"CAT Val AUC: {cat_auc:.4f}")
+print(f"XGB Val AUC: {xgb_auc:.4f}")
+
+# ── Optuna 가중치 최적화 ──
+def objective(trial):
+    w_lgb = trial.suggest_float("w_lgb", 0.0, 1.0)
+    w_cat = trial.suggest_float("w_cat", 0.0, 1.0)
+    w_xgb = trial.suggest_float("w_xgb", 0.0, 1.0)
+    total = w_lgb + w_cat + w_xgb + 1e-8
+    ensemble = (lgb_proba * w_lgb + cat_proba * w_cat + xgb_proba * w_xgb) / total
+    return roc_auc_score(y_val, ensemble)
+
+study = optuna.create_study(direction="maximize")
+study.optimize(objective, n_trials=200, show_progress_bar=True)
+
+# ── 최적 가중치 정규화 ──
+w = study.best_params
+total = w["w_lgb"] + w["w_cat"] + w["w_xgb"]
+w_lgb = w["w_lgb"] / total
+w_cat = w["w_cat"] / total
+w_xgb = w["w_xgb"] / total
+
+print(f"\nBest Val AUC:  {study.best_value:.4f}")
+print(f"최적 가중치 — LGB: {w_lgb:.3f} | CAT: {w_cat:.3f} | XGB: {w_xgb:.3f}")
+
+# ── Val 최종 앙상블 성능 ──
+ensemble_val = lgb_proba * w_lgb + cat_proba * w_cat + xgb_proba * w_xgb
+ensemble_auc = roc_auc_score(y_val, ensemble_val)
+ensemble_pred = (ensemble_val >= 0.5).astype(int)
+
+print(f"\n[앙상블 Val AUC]: {ensemble_auc:.4f}")
+print("\n[Classification Report]")
+print(classification_report(y_val, ensemble_pred))
+print("\n[Confusion Matrix]")
+print(confusion_matrix(y_val, ensemble_pred))
+
+# ── 실험 기록장용 정보 출력 ──
+from sklearn.metrics import f1_score, recall_score, precision_score, accuracy_score
+print("\n" + "="*50)
+print("📋 실험 기록장 정보")
+print("="*50)
+print(f"모델명        : LGB + CAT + XGB 앙상블 (Optuna 가중치)")
+print(f"사용 피처 수  : {X_train.shape[1]}")
+print(f"LGB Val AUC  : {lgb_auc:.4f}")
+print(f"CAT Val AUC  : {cat_auc:.4f}")
+print(f"XGB Val AUC  : {xgb_auc:.4f}")
+print(f"앙상블 AUC   : {ensemble_auc:.4f}")
+print(f"최적 가중치   : LGB={w_lgb:.3f}, CAT={w_cat:.3f}, XGB={w_xgb:.3f}")
+print(f"F1 Score     : {f1_score(y_val, ensemble_pred, average='macro'):.4f}")
+print(f"Recall       : {recall_score(y_val, ensemble_pred, average='macro'):.4f}")
+print(f"Precision    : {precision_score(y_val, ensemble_pred, average='macro'):.4f}")
+print(f"Accuracy     : {accuracy_score(y_val, ensemble_pred):.4f}")
+print(f"검증 방법     : train_test_split (test_size=0.2, stratify=y)")
+print(f"클래스 불균형 : scale_pos_weight={scale_pos_weight:.4f} / is_unbalance(CAT)")
+print(f"파일명        : submission_exp021_SYJ.csv")
+print("="*50)
+
+# ── 전체 데이터로 최종 학습 & 제출 ──
+final_lgb_full = lgb.LGBMClassifier(**best_lgb_params)
+final_lgb_full.fit(X, y)
+
+final_cat_full = CatBoostClassifier(**cat_params)
+final_cat_full.fit(X, y)
+
+final_xgb_full = XGBClassifier(**xgb_params)
+final_xgb_full.fit(X, y)
+
+ensemble_submit = (
+    final_lgb_full.predict_proba(X_submit)[:, 1] * w_lgb +
+    final_cat_full.predict_proba(X_submit)[:, 1] * w_cat +
+    final_xgb_full.predict_proba(X_submit)[:, 1] * w_xgb
+)
+
+submission = pd.DataFrame({"ID": test_ids, "probability": ensemble_submit})
+submission.to_csv("submission_exp021_SYJ.csv", index=False)
+print("\n제출 파일 'submission_exp021_SYJ.csv' 생성 완료!")
+print(submission.head())
