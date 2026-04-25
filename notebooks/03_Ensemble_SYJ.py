@@ -250,3 +250,28 @@ print(f"가중치 앙상블 Val AUC: {roc_auc_score(y_val, val_weighted):.4f}")
 submission_weighted = pd.DataFrame({"ID": test_ids, "probability": ensemble_pred_weighted})
 submission_weighted.to_csv("ensemble_weighted.csv", index=False)
 print("✅ 가중치 앙상블 파일 생성 완료!")
+
+# RF + ET 앙상블
+val_rf_et = (
+    final_rf.predict_proba(X_val_30)[:, 1] * 0.6 +
+    final_et.predict_proba(X_val_30)[:, 1] * 0.4
+)
+print(f"RF+ET 앙상블 Val AUC: {roc_auc_score(y_val, val_rf_et):.4f}")
+
+# RF + XGB 앙상블
+val_rf_xgb = (
+    final_rf.predict_proba(X_val_30)[:, 1] * 0.6 +
+    final_xgb.predict_proba(X_val_30)[:, 1] * 0.4
+)
+print(f"RF+XGB 앙상블 Val AUC: {roc_auc_score(y_val, val_rf_xgb):.4f}")
+
+
+pred_rf_et = (
+    final_rf.predict_proba(X_submit_30)[:, 1] * 0.6 +
+    final_et.predict_proba(X_submit_30)[:, 1] * 0.4
+)
+
+submission_rf_et = pd.DataFrame({"ID": test_ids, "probability": pred_rf_et})
+submission_rf_et.to_csv("ensemble_rf_et.csv", index=False)
+print("✅ RF+ET 앙상블 파일 생성 완료!")
+print(submission_rf_et.head())
