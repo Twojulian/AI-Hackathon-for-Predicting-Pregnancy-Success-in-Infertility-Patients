@@ -347,3 +347,40 @@ submission = pd.DataFrame({
 submission.to_csv("submission_exp020_SYJ.csv", index=False)
 print("제출 파일 'submission_exp020_SYJ.csv' 생성 완료!")
 print(submission.head())
+
+# ════════════════════════════════════════════════════════════
+# catboost 확인
+# ════════════════════════════════════════════════════════════
+
+from catboost import CatBoostClassifier
+
+# CatBoost 베이스라인
+cat_params = {
+    "iterations":        500,
+    "learning_rate":     0.05,
+    "depth":             6,
+    "scale_pos_weight":  scale_pos_weight,
+    "random_seed":       42,
+    "verbose":           0,
+    "eval_metric":       "AUC",
+    "thread_count":      -1,
+}
+
+cat_model = CatBoostClassifier(**cat_params)
+cat_model.fit(X_train, y_train)
+
+cat_auc = roc_auc_score(y_val, cat_model.predict_proba(X_val)[:, 1])
+print(f"CatBoost Val AUC: {cat_auc:.4f}")
+
+val_pred  = cat_model.predict(X_val)
+val_proba = cat_model.predict_proba(X_val)[:, 1]
+
+print("\n[Classification Report]")
+print(classification_report(y_val, val_pred))
+print("\n[Confusion Matrix]")
+print(confusion_matrix(y_val, val_pred))
+
+feat_imp = pd.Series(cat_model.get_feature_importance(),
+                        index=X_train.columns)
+print("\n[Feature Importance Top 15]")
+print(feat_imp.nlargest(15))
