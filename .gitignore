@@ -41,4 +41,4 @@ uploads/
 # Environment
 .env
 venv/
-.env.*
+.env.*data/
