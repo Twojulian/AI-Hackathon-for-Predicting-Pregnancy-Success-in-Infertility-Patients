@@ -1,4 +1,5 @@
 # 데이터 (원본 및 제출 파일)
+data/
 data/raw/
 data/processed/
 data/submissions/
