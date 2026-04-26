@@ -36,6 +36,10 @@
 
 ---
 
+## 6. 건강보험 지원 현황
+
+
+*본 문서는 해커톤 참가자의 데이터 이해를 돕기 위해 작성된 참고 자료입니다.*
 ## 환경 설정
 
 ```bash
@@ -100,4 +104,3 @@ submission_{exp번호}_{이름이니셜}_{AUC점수}.csv
 - 외부 데이터 사용 불가 / 사전 학습 모델(Pre-trained) 사용 가능
 - 인코딩·스케일링·결측치 처리 시 **test 데이터의 train 활용 금지** (Data Leakage)
 - `pd.get_dummies()` 적용 시 test 데이터셋에도 동일 적용 필요
-# AI-Hackathon-for-Predicting-Pregnancy-Success-in-Infertility-Patients
