@@ -10,7 +10,7 @@
     2. 결측 → 0 재코딩 (비결측=전부 1인 컬럼 → 결측=미시행 의미)
     3. 순서형 정수 매핑
     4. 배아 생성 주요 이유 멀티핫 인코딩 (복수 선택 분리)
-    5. 명목형 LabelEncoding (train+test 합쳐서 fit → 미래 범주 안전)
+    5. 명목형 LabelEncoding (train만 fit, test 미지 카테고리 → len(classes))
 
 개인 피처 엔지니어링은 preprocess() 결과에 각자 추가하세요.
 """
@@ -119,13 +119,14 @@ def preprocess(train_df: pd.DataFrame,
         tr.drop(columns=[EMBRYO_COL], inplace=True)
         te.drop(columns=[EMBRYO_COL], inplace=True)
 
-    # 4. 명목형 LabelEncoding (train+test 합쳐서 fit)
+    # 4. 명목형 LabelEncoding (train만 fit — test 사용 시 data leakage)
     for col in LABEL_COLS:
         if col in tr.columns:
             le = LabelEncoder()
-            combined = pd.concat([tr[col], te[col]], ignore_index=True).astype(str)
-            le.fit(combined)
+            le.fit(tr[col].astype(str))
             tr[col] = le.transform(tr[col].astype(str))
-            te[col] = le.transform(te[col].astype(str))
+            # test의 미지 카테고리 → len(classes) 로 처리 (GBDT가 별도 분기로 처리)
+            classes_map = {c: i for i, c in enumerate(le.classes_)}
+            te[col] = te[col].astype(str).map(classes_map).fillna(len(le.classes_)).astype(int)
 
     return tr, te
