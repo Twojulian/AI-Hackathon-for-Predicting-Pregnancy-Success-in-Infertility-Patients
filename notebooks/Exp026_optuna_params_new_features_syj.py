@@ -467,3 +467,60 @@ print(f"검증 방법     : Stratified {N_FOLDS}-Fold OOF")
 print(f"클래스 불균형 : scale_pos_weight={neg_pos_ratio:.4f}")
 print(f"파일명        : {out_fname}")
 print("="*55)
+
+# ════════════════════════════════════════════════════════════
+# Feature Importance (LGB + CAT + XGB rank 평균)
+# ════════════════════════════════════════════════════════════
+
+from scipy.stats import rankdata
+
+# 각 모델 importance (마지막 fold 기준)
+imp_lgb = pd.Series(lgb_model.feature_importances_, index=X_all_lgb.columns)
+imp_cat = pd.Series(cat_model.feature_importances_, index=X_all.columns)
+imp_xgb = pd.Series(xgb_model.feature_importances_, index=X_all.columns)
+
+# LGB는 drop된 컬럼 2개 없으니까 맞춰주기
+imp_cat_lgb = imp_cat.drop(index=[c for c in LGB_DROP_COLS if c in imp_cat.index], errors="ignore")
+imp_xgb_lgb = imp_xgb.drop(index=[c for c in LGB_DROP_COLS if c in imp_xgb.index], errors="ignore")
+
+# 공통 피처만
+common_features = imp_lgb.index.intersection(imp_cat_lgb.index).intersection(imp_xgb_lgb.index)
+imp_lgb = imp_lgb[common_features]
+imp_cat_lgb = imp_cat_lgb[common_features]
+imp_xgb_lgb = imp_xgb_lgb[common_features]
+
+# rank 변환 후 평균
+rank_lgb = pd.Series(rankdata(imp_lgb), index=common_features)
+rank_cat = pd.Series(rankdata(imp_cat_lgb), index=common_features)
+rank_xgb = pd.Series(rankdata(imp_xgb_lgb), index=common_features)
+rank_avg = ((rank_lgb + rank_cat + rank_xgb) / 3).sort_values(ascending=False)
+
+NEW_FEATURES = [
+    "나이_불임원인_상호작용", "나이_이전임신_상호작용",
+    "시술횟수_구간", "해동_배아_비율",
+] + [f"시술유형_{p}" for p in ["IVF", "ICSI", "IUI", "FER", "BLASTOCYST", "GIFT", "ICI"]]
+
+print(f"\n{'='*65}")
+print(f"Feature Importance 순위 (3모델 Rank 평균, 전체 {len(rank_avg)}개)")
+print(f"{'='*65}")
+for i, (feat, val) in enumerate(rank_avg.items(), 1):
+    new_mark = " ★신규" if feat in NEW_FEATURES else ""
+    print(f"  {i:>3}. {feat:<40} {val:.1f}{new_mark}")
+
+# 신규 피처 요약
+print(f"\n{'='*65}")
+print(f"신규 피처 순위 요약")
+print(f"{'='*65}")
+for feat in NEW_FEATURES:
+    if feat in rank_avg.index:
+        rank = rank_avg.index.get_loc(feat) + 1
+        print(f"  전체 {rank:>3}위  {feat}")
+    else:
+        print(f"  (없음)  {feat}")
+
+# CSV 저장
+rank_df = pd.DataFrame({"feature": rank_avg.index, "rank_avg": rank_avg.values})
+rank_df["rank"] = range(1, len(rank_df)+1)
+rank_df["is_new"] = rank_df["feature"].isin(NEW_FEATURES)
+rank_df.to_csv("feature_importance_exp026.csv", index=False)
+print(f"\nCSV 저장 완료: feature_importance_exp026.csv")
