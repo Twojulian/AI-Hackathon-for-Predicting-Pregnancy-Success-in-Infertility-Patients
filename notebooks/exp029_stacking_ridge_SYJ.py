@@ -510,3 +510,179 @@ print(f"  - Meta: Ridge(L2) C 탐색 {C_candidates}")
 print(f"  - USE_ORIGINAL_FEATURES={USE_ORIGINAL_FEATURES}")
 print(f"인사이트      : exp024 Rank Average 대비 Stacking 효과 확인 목적")
 print("="*55)
+
+# ════════════════════════════════════════════════════════════
+#  USE_ORIGINAL_FEATURES = False  
+# Ridge Stack  : 0.74024  (-0.00001 vs exp024)
+# Rank Average : 0.74025  (+0.00000 vs exp024)
+# ════════════════════════════════════════════════════════════
+
+USE_ORIGINAL_FEATURES = True
+
+
+# ════════════════════════════════════════════════════════════
+# Stage 1 — Base 모델 OOF 예측
+# ════════════════════════════════════════════════════════════
+
+skf      = StratifiedKFold(n_splits=N_FOLDS, shuffle=True, random_state=SEED)
+oof_lgb  = np.zeros(len(X_all))
+oof_cat  = np.zeros(len(X_all))
+oof_xgb  = np.zeros(len(X_all))
+test_lgb = np.zeros(len(X_submit))
+test_cat = np.zeros(len(X_submit))
+test_xgb = np.zeros(len(X_submit))
+
+print(f"\n{'='*60}")
+print(f"[Stage 1] Base 모델 OOF 학습 (LGB + CAT + XGB, 5-Fold)")
+print(f"{'='*60}")
+
+for fold, (tr_idx, val_idx) in enumerate(skf.split(X_all, y_all), 1):
+    X_tr,     X_val     = X_all.iloc[tr_idx],     X_all.iloc[val_idx]
+    X_tr_lgb, X_val_lgb = X_all_lgb.iloc[tr_idx], X_all_lgb.iloc[val_idx]
+    y_tr, y_val         = y_all.iloc[tr_idx],      y_all.iloc[val_idx]
+
+    lgb_model = lgb.LGBMClassifier(**BEST_LGB_PARAMS)
+    lgb_model.fit(X_tr_lgb, y_tr)
+    oof_lgb[val_idx]  = lgb_model.predict_proba(X_val_lgb)[:, 1]
+    test_lgb         += lgb_model.predict_proba(X_submit_lgb)[:, 1] / N_FOLDS
+
+    cat_model = CatBoostClassifier(**BEST_CAT_PARAMS)
+    cat_model.fit(X_tr, y_tr)
+    oof_cat[val_idx]  = cat_model.predict_proba(X_val)[:, 1]
+    test_cat         += cat_model.predict_proba(X_submit)[:, 1] / N_FOLDS
+
+    xgb_model = XGBClassifier(**BEST_XGB_PARAMS)
+    xgb_model.fit(X_tr, y_tr)
+    oof_xgb[val_idx]  = xgb_model.predict_proba(X_val)[:, 1]
+    test_xgb         += xgb_model.predict_proba(X_submit)[:, 1] / N_FOLDS
+
+    print(f"  Fold {fold}  LGB={roc_auc_score(y_val, oof_lgb[val_idx]):.4f}"
+          f"  CAT={roc_auc_score(y_val, oof_cat[val_idx]):.4f}"
+          f"  XGB={roc_auc_score(y_val, oof_xgb[val_idx]):.4f}")
+
+auc_lgb = roc_auc_score(y_all, oof_lgb)
+auc_cat = roc_auc_score(y_all, oof_cat)
+auc_xgb = roc_auc_score(y_all, oof_xgb)
+print(f"\nBase OOF AUC  LGB={auc_lgb:.5f}  CAT={auc_cat:.5f}  XGB={auc_xgb:.5f}")
+
+
+# ════════════════════════════════════════════════════════════
+# Stage 2 — Ridge 메타 모델
+# ════════════════════════════════════════════════════════════
+
+# 메타 피처 구성
+oof_meta  = np.stack([oof_lgb,  oof_cat,  oof_xgb],  axis=1)  # (N, 3)
+test_meta = np.stack([test_lgb, test_cat, test_xgb], axis=1)  # (M, 3)
+
+if USE_ORIGINAL_FEATURES:
+    # OOF 예측값 3개 + 원본 피처 전체
+    oof_meta  = np.hstack([oof_meta,  X_all.values])
+    test_meta = np.hstack([test_meta, X_submit.values])
+    print(f"\n[메타 피처] OOF 3개 + 원본 {X_all.shape[1]}개 = {oof_meta.shape[1]}개")
+else:
+    print(f"\n[메타 피처] OOF 3개만 (순수 Stacking)")
+
+# Ridge는 확률값을 직접 못 뱉으므로 LogisticRegression(C 역할 = Ridge) 사용
+# → penalty='l2' + solver='lbfgs' = Ridge Regression과 동일한 정규화 효과
+print(f"\n{'='*60}")
+print(f"[Stage 2] Ridge 메타 모델 학습 (5-Fold OOF)")
+print(f"{'='*60}")
+
+# C값 후보 탐색 (작을수록 강한 정규화 = Ridge 강도)
+C_candidates = [0.001, 0.01, 0.1, 1.0, 10.0]
+best_C, best_meta_auc = 0.01, 0
+
+for C in C_candidates:
+    oof_ridge = np.zeros(len(X_all))
+    for tr_idx, val_idx in skf.split(oof_meta, y_all):
+        meta_tr, meta_val = oof_meta[tr_idx], oof_meta[val_idx]
+        y_tr, y_val       = y_all.iloc[tr_idx], y_all.iloc[val_idx]
+        ridge = LogisticRegression(C=C, penalty="l2", solver="lbfgs",
+                                   max_iter=1000, random_state=SEED)
+        ridge.fit(meta_tr, y_tr)
+        oof_ridge[val_idx] = ridge.predict_proba(meta_val)[:, 1]
+    auc = roc_auc_score(y_all, oof_ridge)
+    print(f"  C={C:<8}  OOF AUC={auc:.5f}")
+    if auc > best_meta_auc:
+        best_meta_auc, best_C = auc, C
+
+print(f"\n  최적 C={best_C}  →  메타 AUC={best_meta_auc:.5f}")
+
+# 최적 C로 최종 Ridge 학습
+oof_final  = np.zeros(len(X_all))
+test_final = np.zeros(len(X_submit))
+
+for tr_idx, val_idx in skf.split(oof_meta, y_all):
+    meta_tr, meta_val = oof_meta[tr_idx], oof_meta[val_idx]
+    y_tr              = y_all.iloc[tr_idx]
+    ridge = LogisticRegression(C=best_C, penalty="l2", solver="lbfgs",
+                               max_iter=1000, random_state=SEED)
+    ridge.fit(meta_tr, y_tr)
+    oof_final[val_idx]  = ridge.predict_proba(meta_val)[:, 1]
+    test_final         += ridge.predict_proba(test_meta)[:, 1] / N_FOLDS
+
+final_auc = roc_auc_score(y_all, oof_final)
+
+# Rank Average 결과도 같이 비교
+def rank_normalize(arr):
+    mn, mx = arr.min(), arr.max()
+    return (arr - mn) / (mx - mn + 1e-9)
+
+oof_rank  = np.stack([rankdata(oof_meta[:, i])  for i in range(3)], axis=1).mean(axis=1)
+test_rank = np.stack([rankdata(test_meta[:, i]) for i in range(3)], axis=1).mean(axis=1)
+rank_auc  = roc_auc_score(y_all, oof_rank)
+
+print(f"\n{'='*65}")
+print(f"  Base 개별: LGB={auc_lgb:.5f}  CAT={auc_cat:.5f}  XGB={auc_xgb:.5f}")
+print(f"  기준선 (exp024 Rank Average): {BASELINE}")
+print(f"{'-'*65}")
+print(f"  Rank Average (비교용)  : {rank_auc:.5f}  ({rank_auc-BASELINE:+.5f} vs exp024)")
+print(f"  Ridge Stacking (C={best_C}): {final_auc:.5f}  ({final_auc-BASELINE:+.5f} vs exp024)")
+print(f"{'='*65}")
+
+best_pred = test_final if final_auc >= rank_auc else rank_normalize(test_rank)
+best_auc  = max(final_auc, rank_auc)
+best_name = f"Ridge Stacking(C={best_C})" if final_auc >= rank_auc else "Rank Average"
+print(f"\n최종 선택: {best_name}  OOF AUC={best_auc:.5f}")
+
+
+# ════════════════════════════════════════════════════════════
+# 제출 파일 저장
+# ════════════════════════════════════════════════════════════
+
+out_fname  = f"submission_exp{EXP_NO:03d}_{AUTHOR}.csv"
+submission = pd.DataFrame({"ID": test_ids, "probability": best_pred})
+submission.to_csv(out_fname, index=False)
+print(f"\n제출 파일 저장 완료: {out_fname}")
+print(f"  probability 범위: [{best_pred.min():.4f}, {best_pred.max():.4f}]  ← 0~1 확인")
+
+
+# ════════════════════════════════════════════════════════════
+# 실험 기록장
+# ════════════════════════════════════════════════════════════
+
+oof_binary = (oof_final >= np.percentile(oof_final, 70)).astype(int)
+
+print("\n" + "="*55)
+print("📋 실험 기록장 정보")
+print("="*55)
+print(f"실험 번호     : exp{EXP_NO:03d}")
+print(f"모델명        : LGB + CAT + XGB → Ridge Stacking")
+print(f"메타 모델     : LogisticRegression(L2) C={best_C} / USE_ORIGINAL_FEATURES={USE_ORIGINAL_FEATURES}")
+print(f"전체 피처 수  : {X_all.shape[1]}  /  LGB 피처 수: {X_all_lgb.shape[1]}")
+print(f"Base LGB AUC : {auc_lgb:.5f}")
+print(f"Base CAT AUC : {auc_cat:.5f}")
+print(f"Base XGB AUC : {auc_xgb:.5f}")
+print(f"Ridge Stack  : {final_auc:.5f}  ({final_auc-BASELINE:+.5f} vs exp024)")
+print(f"Rank Average : {rank_auc:.5f}  ({rank_auc-BASELINE:+.5f} vs exp024)")
+print(f"최종 선택    : {best_name}  AUC={best_auc:.5f}")
+print(f"F1 Score     : {f1_score(y_all, oof_binary, average='macro'):.4f}")
+print(f"검증 방법     : Stratified {N_FOLDS}-Fold OOF (Base + Meta 모두)")
+print(f"클래스 불균형 : scale_pos_weight={neg_pos_ratio:.4f}")
+print(f"파일명        : {out_fname}")
+print(f"특이사항      :")
+print(f"  - 피처 구성: exp024 기준 102개 (신규 5종 없음)")
+print(f"  - Base: exp024 Optuna 파라미터 그대로")
+print(f"  - Meta: Ridge(L2) C 탐색 {C_candidates}")
+print(f"  - USE_ORIGINAL_FEATURES={USE_ORIGINAL_FEATURES}")
+print("="*55)
