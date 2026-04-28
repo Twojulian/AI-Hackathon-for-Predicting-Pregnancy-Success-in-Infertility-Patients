@@ -34,9 +34,9 @@ warnings.filterwarnings("ignore")
 SEED     = 42
 N_FOLDS  = 5
 TARGET   = "임신 성공 여부"
-EXP_NO   = 27
+EXP_NO   = 27_1
 AUTHOR   = "SYJ"
-BASELINE = 0.74016  # exp026 OOF AUC
+BASELINE = 0.74021  # exp027 OOF AUC
 
 
 # ════════════════════════════════════════════════════════════
@@ -76,7 +76,7 @@ BEST_XGB_PARAMS = {
 
 
 # ════════════════════════════════════════════════════════════
-# exp026 importance 기준 81위 이하 제거 목록
+# exp026 importance 기준 71위 이하 제거 목록
 # ════════════════════════════════════════════════════════════
 
 DROP_BY_IMPORTANCE = [
@@ -112,6 +112,17 @@ DROP_BY_IMPORTANCE = [
     "임신시도_결측여부",             # 108위
     "난자 채취 경과일",             # 109위
     "신선_시술_여부",               # 110위
+        # exp028 추가 제거 71~80위 (9개)
+    "이전_임신_여부",           # 71위
+    "DI 임신 횟수",             # 72위
+    "착상 전 유전 진단 사용 여부", # 73위
+    "동결 배아 사용 여부",        # 74위
+    "IVF_DI_시술_합산",          # 75위
+    "총 시술 횟수",              # 76위
+    "불명확 불임 원인",           # 77위
+    "시술유형_ICSI",             # 78위 ★신규
+    "시술유형_IVF",              # 79위 ★신규
+    "기증자 정자와 혼합된 난자 수", # 80위
 ]
 
 
@@ -361,7 +372,7 @@ X_submit = test_df.drop(columns=[TARGET], errors="ignore")
 
 neg_pos_ratio = (y_all == 0).sum() / (y_all == 1).sum()
 
-# ★ importance 기준 80위 이하 제거
+# ★ importance 기준 70위 이하 제거
 drop_cols = [c for c in DROP_BY_IMPORTANCE if c in X_all.columns]
 X_all    = X_all.drop(columns=drop_cols)
 X_submit = X_submit.drop(columns=drop_cols)
@@ -498,12 +509,12 @@ print("📋 실험 기록장 정보")
 print("="*55)
 print(f"실험 번호     : exp{EXP_NO:03d}")
 print(f"모델명        : LGB + CAT + XGB 앙상블 ({best_method})")
-print(f"제거 피처 수  : {len(drop_cols)}개 (importance 81위 이하)")
+print(f"제거 피처 수  : {len(drop_cols)}개 (importance 71위 이하)")
 print(f"전체 피처 수  : {X_all.shape[1]}  /  LGB 피처 수: {X_all_lgb.shape[1]}")
 print(f"LGB OOF AUC  : {auc_lgb:.5f}")
 print(f"CAT OOF AUC  : {auc_cat:.5f}")
 print(f"XGB OOF AUC  : {auc_xgb:.5f}")
-print(f"앙상블 AUC   : {best_auc:.5f}  ({best_auc - BASELINE:+.5f} vs exp026)")
+print(f"앙상블 AUC   : {best_auc:.5f}  ({best_auc - BASELINE:+.5f} vs exp027)")
 print(f"F1 Score     : {f1_score(y_all, oof_binary, average='macro'):.4f}")
 print(f"Recall       : {recall_score(y_all, oof_binary, average='macro'):.4f}")
 print(f"Precision    : {precision_score(y_all, oof_binary, average='macro'):.4f}")
@@ -511,4 +522,6 @@ print(f"Accuracy     : {accuracy_score(y_all, oof_binary):.4f}")
 print(f"검증 방법     : Stratified {N_FOLDS}-Fold OOF")
 print(f"클래스 불균형 : scale_pos_weight={neg_pos_ratio:.4f}")
 print(f"파일명        : {out_fname}")
+print(f"특이사항      : exp026 importance 기준 71위 이하 40개 피처 제거")
+print(f"인사이트      : 피처 수 감소로 노이즈 제거 효과 및 AUC 변화 확인")
 print("="*55)
