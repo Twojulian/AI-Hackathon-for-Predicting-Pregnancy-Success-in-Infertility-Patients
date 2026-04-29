@@ -1,7 +1,5 @@
 # 데이터 (원본 및 제출 파일)
-data/raw/
-data/processed/
-data/submissions/
+data/*
 
 # 실험 산출물 (설정과 README, metrics는 올리고 바이너리는 제외)
 experiments/**/*.pkl
@@ -42,3 +40,4 @@ uploads/
 .env
 venv/
 .env.*
+notebooks/catboost_info/

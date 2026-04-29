@@ -17,5 +17,13 @@ catboost==1.2.7
 ipykernel==6.29.5
 jupyter==1.1.1
 
+# Tuning
+optuna==4.3.0
+
+# Deep Learning
+torch
+torchvision
+pytorch-tabnet
+
 # Utility
 tqdm==4.67.1
