@@ -17,7 +17,7 @@ from catboost import CatBoostClassifier, Pool
 from xgboost import XGBClassifier
 from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import (roc_auc_score, f1_score,
-                             recall_score, precision_score, accuracy_score)
+                            recall_score, precision_score, accuracy_score)
 from sklearn.preprocessing import LabelEncoder
 from scipy.stats import rankdata
 import optuna
@@ -66,36 +66,47 @@ ITE_ALPHA = 20
 # ════════════════════════════════════════════════════════════
 
 BEST_LGB_PARAMS = {
-    "n_estimators": 687,
-    "learning_rate": 0.06728712035169694,
-    "num_leaves": 272,
-    "max_depth": 3,
-    "min_child_samples": 62,
-    "subsample": 0.7104765923920849,
-    "colsample_bytree": 0.5598759562284701,
-    "reg_alpha": 7.8646544609636635,
-    "reg_lambda": 3.5299647925886912,
+    "n_estimators": 2000,
+    "learning_rate": 0.035425966303284824,
+    "num_leaves": 266,
+    "max_depth": 5,
+    "min_child_samples": 166,
+    "colsample_bytree": 0.5346439126449233,
+    "subsample": 0.7122309235479091,
+    "subsample_freq": 1,
+    "reg_alpha": 9.901034988600228,
+    "reg_lambda": 2.213951873239442,
+    "min_split_gain": 0.11418176854933762,
+    "is_unbalance": True,
+    "random_state": SEED,
+    "n_jobs": -1,
+    "verbose": -1,
 }
 BEST_CAT_PARAMS = {
     "iterations": 2000,
-    "learning_rate": 0.011818212764898741,
+    "loss_function": "Logloss", "eval_metric": "AUC",
+    "auto_class_weights": "Balanced",
+    "random_seed": SEED, "verbose": 0,
+    "thread_count": -1, "early_stopping_rounds": 100,
+    "learning_rate": 0.018758723768855998,
     "depth": 6,
-    "l2_leaf_reg": 7.461945627619095,
-    "min_data_in_leaf": 10,
-    "subsample": 0.9466415028340966,
-    "colsample_bylevel": 0.9498475991985358,
-    "early_stopping_rounds": 100,
+    "l2_leaf_reg": 9.189608434163782,
+    "min_data_in_leaf": 19,
+    "subsample": 0.8170921295501483,
+    "colsample_bylevel": 0.6936810336930781,
 }
 BEST_XGB_PARAMS = {
     "n_estimators": 2000,
-    "learning_rate": 0.019039448776941068,
-    "max_depth": 5,
-    "min_child_weight": 46,
-    "subsample": 0.8977566603325766,
-    "colsample_bytree": 0.5960202930510033,
-    "reg_alpha": 0.0022796242865722625,
-    "reg_lambda": 0.08546935668674432,
-    "early_stopping_rounds": 100,
+    "eval_metric": "auc", "tree_method": "hist",
+    "random_state": SEED, "n_jobs": -1,
+    "verbosity": 0, "early_stopping_rounds": 100,
+    "learning_rate": 0.05520069867907647,
+    "max_depth": 4,
+    "min_child_weight": 59,
+    "subsample": 0.7663066457187595,
+    "colsample_bytree": 0.6581836436885355,
+    "reg_alpha": 8.692038126211928,
+    "reg_lambda": 0.23932562420374562,
 }
 
 
@@ -392,20 +403,7 @@ print(f"XGB  피처: {train_v2_enc.shape[1] + len(_te_cols) + len(_ite_pairs)}�
 # 파라미터 공통 항목 추가
 # ════════════════════════════════════════════════════════════
 
-BEST_LGB_PARAMS.update({
-    "scale_pos_weight": neg_pos_ratio,
-    "random_state": SEED, "n_jobs": -1, "verbose": -1,
-})
-BEST_CAT_PARAMS.update({
-    "scale_pos_weight": neg_pos_ratio,
-    "random_seed": SEED, "verbose": 0,
-    "eval_metric": "AUC", "thread_count": -1,
-})
-BEST_XGB_PARAMS.update({
-    "scale_pos_weight": neg_pos_ratio,
-    "random_state": SEED, "n_jobs": -1,
-    "verbosity": 0, "eval_metric": "logloss",
-})
+BEST_XGB_PARAMS.update({"scale_pos_weight": neg_pos_ratio})
 
 
 # ════════════════════════════════════════════════════════════
@@ -510,11 +508,11 @@ def optuna_weight_obj(trial):
     return roc_auc_score(y_all, (oofs * w).sum(axis=1))
 
 study = optuna.create_study(direction="maximize",
-                             sampler=optuna.samplers.TPESampler(seed=SEED))
+                            sampler=optuna.samplers.TPESampler(seed=SEED))
 study.optimize(optuna_weight_obj, n_trials=OPTUNA_WEIGHT_TRIALS, show_progress_bar=False)
 best_w = np.array([study.best_params["w_lgb"],
-                   study.best_params["w_cat"],
-                   study.best_params["w_xgb"]])
+                    study.best_params["w_cat"],
+                    study.best_params["w_xgb"]])
 best_w = best_w / best_w.sum()
 print(f"  최적 가중치: LGB={best_w[0]:.3f}  CAT={best_w[1]:.3f}  XGB={best_w[2]:.3f}")
 
