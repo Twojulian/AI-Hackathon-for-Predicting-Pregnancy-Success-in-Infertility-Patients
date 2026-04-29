@@ -136,8 +136,11 @@ submission_{exp번호}_{이름}_{AUC점수}.csv
 - 인코딩·스케일링·결측치 처리 시 **test 데이터의 통계값 활용 금지** (Data Leakage)
 - Target Encoding은 반드시 **fold 내부**에서 train fold 기준으로만 계산
 
+---
 
 ## 팀원 실험 흐름 
+
+---
 
 ### 설윤재 핵심 실험 흐름
 | 단계 | 실험 | 핵심 변경 | 모델 | 피처 수 | Val/OOF AUC | 제출 AUC | 변화 |
