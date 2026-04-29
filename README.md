@@ -157,7 +157,6 @@ submission_{exp번호}_{이름}_{AUC점수}.csv
 | 앙상블 구조 | exp029 | Rank Average → Ridge Stacking 메타 모델 | LGB·CAT·XGB | 102 | 0.74024 | — | -0.0001 |
 | 인코딩 | **exp032** ⭐ | fold-wise TE + ITE(조합 TE) + 팀원 파라미터 결합 | LGB·CAT·XGB | 혼합 | **0.74037** | **0.74170** | +0.0001 |
 
-### 윤지현  핵심 실험 흐름
 
 ### 윤지현 핵심 실험 흐름
 
