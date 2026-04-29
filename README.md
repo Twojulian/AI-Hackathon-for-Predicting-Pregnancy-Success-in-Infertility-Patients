@@ -156,3 +156,28 @@ submission_{exp번호}_{이름}_{AUC점수}.csv
 | 피처 선별 | exp027 | importance 하위 제거 (113 → 81개) | LGB·CAT·XGB | 81 | 0.74021 | — | -0.0001 |
 | 앙상블 구조 | exp029 | Rank Average → Ridge Stacking 메타 모델 | LGB·CAT·XGB | 102 | 0.74024 | — | -0.0001 |
 | 인코딩 | **exp032** ⭐ | fold-wise TE + ITE(조합 TE) + 팀원 파라미터 결합 | LGB·CAT·XGB | 혼합 | **0.74037** | **0.74170** | +0.0001 |
+
+### 윤지현  핵심 실험 흐름
+
+### 윤지현 핵심 실험 흐름
+
+| 단계 | 실험 | 핵심 변경 | 모델 | 피처 수 | Val/OOF AUC | 제출 AUC | 변화 |
+|------|------|-----------|------|--------|-------------|----------|------|
+| EDA | - | 결측/불균형 분석 | - | - | - | - | - |
+| 베이스라인 | LR | 기본 모델 | LR | - | ~0.699 | - | - |
+| 모델 실험 | Tree | LGB/CAT/XGB 비교 | Tree | ~80 | ~0.74 | - | ↑ |
+| 피처 엔지니어링 | ratio | 배아 효율 feature | Tree | ↑ | ~0.74 | - | ↑ |
+| Seed Ensemble | CatBoost | multi-seed ensemble | CAT | - | 0.7401 | **0.7408** | ↑ |
+| Leakage 제거 | preprocessing | train/test 분리 | CAT | - | 안정화 | - | 핵심 |
+| 앙상블 시도 | CAT+XGB | 단순/랭크 앙상블 | Ensemble | - | ~0.74 | **0.7376** | ↓ |
+| 검증 개선 | GroupKFold | 일반화 검증 | CAT | - | ~0.732 | - | 현실화 |
+
+---
+
+#### 🔥 핵심 인사이트
+- 전처리 구조가 성능을 좌우
+- CatBoost가 가장 안정적
+- ratio feature 효과 큼
+- 앙상블은 다양성 없으면 의미 없음
+- validation 방식에 따라 성능 차이 발생
+
